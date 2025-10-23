@@ -1,0 +1,27 @@
+[project]
+name = "fastapi-hello"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Rakibul Islam", email = "rakibcuet16@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.119.1",
+    "genkit>=0.4.0",
+    "genkit-plugin-google-genai>=0.4.0",
+    "numpy>=1.26.0",
+    "pymupdf>=1.26.5",
+    "python-dotenv>=1.1.1",
+    "python-multipart>=0.0.20",
+    "scikit-learn>=1.3.0",
+    "uvicorn>=0.38.0",
+]
+
+[project.scripts]
+fastapi-hello = "fastapi_hello:main"
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
