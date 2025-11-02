@@ -31,6 +31,10 @@ def main():
         print("\nType 'exit' to quit.\n")
         print("-" * 60)
 
+        # Use a thread ID for conversation memory
+        thread_id = "ecommerce_session_1"
+        config = {"configurable": {"thread_id": thread_id}}
+
         # Interactive loop
         while True:
             query = input("\nYou: ").strip()
@@ -44,15 +48,33 @@ def main():
 
             print("\nAgent: ", end="", flush=True)
 
-            # Stream response
+            # Stream response with memory (thread_id in config)
             for step in agent.stream(
-                {"messages": [{"role": "user", "content": query}]}
+                {"messages": [{"role": "user", "content": query}]},
+                config=config,
             ):
                 for update in step.values():
-                    messages = update.get("messages", [])
+                    if update is None:
+                        continue
+                    messages = update.get("messages", []) if isinstance(update, dict) else []
                     for message in messages:
-                        if hasattr(message, "content") and message.content:
-                            print(message.content, end="", flush=True)
+                        # Try using the text property first (simpler)
+                        if hasattr(message, "text"):
+                            text = message.text
+                            if text:
+                                print(text, end="", flush=True)
+                        # Fallback to content handling
+                        elif hasattr(message, "content") and message.content:
+                            content = message.content
+                            # Handle content blocks (list of dicts)
+                            if isinstance(content, list):
+                                # Extract text from content blocks
+                                for block in content:
+                                    if isinstance(block, dict) and block.get("type") == "text":
+                                        print(block.get("text", ""), end="", flush=True)
+                            elif isinstance(content, str):
+                                # Direct string content
+                                print(content, end="", flush=True)
 
             print("\n")
             print("-" * 60)

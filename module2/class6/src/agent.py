@@ -3,8 +3,10 @@
 import os
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
 from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.checkpoint.memory import InMemorySaver
+from .llms import get_llm, get_small_llm
 from .vector_store import ProductVectorStore
 
 load_dotenv()
@@ -22,10 +24,8 @@ def build_ecommerce_agent(vector_store_path: str = None, csv_path: str = None, t
         Configured agent instance
     """
     # Initialize LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash-exp",
-        temperature=0,
-    )
+    llm = get_llm()
+    smol_llm = get_small_llm()
 
     # Set up vector store
     product_store = ProductVectorStore()
@@ -91,10 +91,20 @@ def build_ecommerce_agent(vector_store_path: str = None, csv_path: str = None, t
         "Be friendly, informative, and helpful in your responses."
     )
 
+    summarization_middleware = SummarizationMiddleware(
+        model=smol_llm,
+        max_tokens_before_summary=2000,
+        messages_to_keep=5,
+    )
+
+    checkpointer = InMemorySaver()
+
     agent = create_agent(
         model=llm,
         tools=[search_products],
         system_prompt=system_prompt,
+        middleware=[summarization_middleware],
+        checkpointer=checkpointer,
     )
 
     return agent, product_store
