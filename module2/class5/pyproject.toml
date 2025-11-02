@@ -1,0 +1,16 @@
+[project]
+name = "class5"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "bs4>=0.0.2",
+    "langchain>=1.0.2",
+    "langchain-community>=0.4",
+    "langchain-google-genai>=3.0.0",
+    "langchain-text-splitters>=1.0.0",
+    "langgraph>=1.0.1",
+    "pydantic>=2.12.3",
+    "python-dotenv>=1.1.1",
+]
