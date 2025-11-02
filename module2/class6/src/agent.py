@@ -1,9 +1,14 @@
 """E-commerce agent using LangChain's create_agent."""
 
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware
+from langchain.agents.middleware import (
+    SummarizationMiddleware,
+    PIIMiddleware,
+    HumanInTheLoopMiddleware,
+)
 from langchain.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from .llms import get_llm, get_small_llm
@@ -12,7 +17,9 @@ from .vector_store import ProductVectorStore
 load_dotenv()
 
 
-def build_ecommerce_agent(vector_store_path: str = None, csv_path: str = None, top_k: int = 3):
+def build_ecommerce_agent(
+    vector_store_path: str = None, csv_path: str = None, top_k: int = 3
+):
     """
     Build e-commerce agent with product search capability.
 
@@ -46,6 +53,38 @@ def build_ecommerce_agent(vector_store_path: str = None, csv_path: str = None, t
 
     # Get retriever
     retriever = product_store.get_retriever(k=top_k)
+
+    # Create order tool - name and email will be provided via HumanInTheLoopMiddleware
+    @tool
+    def create_order(name: str, email: str) -> str:
+        """Create an order with user's information and selected products.
+
+        Use this tool when the user wants to confirm their order or checkout.
+
+        Args:
+            name: User's full name (will be confirmed/edited by user)
+            email: User's email address (will be confirmed/edited by user)
+
+        Returns:
+            Confirmation message with order details
+        """
+
+        # Create order object
+        order = {
+            "order_id": f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "customer_name": name,
+            "customer_email": email,
+            "order_date": datetime.now().isoformat(),
+            "status": "confirmed",
+        }
+
+        return (
+            f"Order created successfully!\n"
+            f"Order ID: {order['order_id']}\n"
+            f"Customer: {name}\n"
+            f"Email: {email}\n"
+            f"Thank you for your order!"
+        )
 
     # Create custom search tool using @tool decorator
     @tool
@@ -84,11 +123,34 @@ def build_ecommerce_agent(vector_store_path: str = None, csv_path: str = None, t
 
     # Create agent with system prompt
     system_prompt = (
-        "You are a helpful e-commerce assistant that helps users find products. "
+        "You are a helpful e-commerce assistant that helps users find products and create orders. "
         "When a user asks about products, use the search_products tool to find "
         f"the top {top_k} most relevant matches. "
+        "When a user wants to confirm their order or checkout, use the create_order tool "
+        "with their name and email address. "
         "Present the results clearly with product names, prices, and key features. "
         "Be friendly, informative, and helpful in your responses."
+    )
+
+    # PII middleware to redact emails before sending to LLM
+    pii_middleware = PIIMiddleware(
+        "email",
+        strategy="redact",
+        apply_to_input=True,
+    )
+
+    # Human-in-the-loop middleware to get name/email directly from user
+    human_in_the_loop_middleware = HumanInTheLoopMiddleware(
+        interrupt_on={
+            "create_order": {
+                "allowed_decisions": ["approve", "edit", "reject"],
+                "description": (
+                    "Please review and confirm your order details. "
+                    "You can approve, edit (name/email), or reject the order."
+                ),
+            },
+        },
+        description_prefix="Order confirmation pending",
     )
 
     summarization_middleware = SummarizationMiddleware(
@@ -101,9 +163,13 @@ def build_ecommerce_agent(vector_store_path: str = None, csv_path: str = None, t
 
     agent = create_agent(
         model=llm,
-        tools=[search_products],
+        tools=[search_products, create_order],
         system_prompt=system_prompt,
-        middleware=[summarization_middleware],
+        middleware=[
+            pii_middleware,
+            human_in_the_loop_middleware,
+            summarization_middleware,
+        ],
         checkpointer=checkpointer,
     )
 
