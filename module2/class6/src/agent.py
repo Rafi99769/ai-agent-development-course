@@ -1,18 +1,14 @@
 """E-commerce agent using LangChain's create_agent."""
 
 import os
-from datetime import datetime
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain.agents.middleware import (
-    SummarizationMiddleware,
-    PIIMiddleware,
-    HumanInTheLoopMiddleware,
-)
-from langchain.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from .llms import get_llm, get_small_llm
 from .vector_store import ProductVectorStore
+from .tools import create_order, create_search_products_tool
+from .middlewares import get_all_middlewares
+from .prompts import get_system_prompt
 
 load_dotenv()
 
@@ -54,122 +50,23 @@ def build_ecommerce_agent(
     # Get retriever
     retriever = product_store.get_retriever(k=top_k)
 
-    # Create order tool - name and email will be provided via HumanInTheLoopMiddleware
-    @tool
-    def create_order(name: str, email: str) -> str:
-        """Create an order with user's information and selected products.
+    # Create tools
+    search_products = create_search_products_tool(retriever)
+    tools = [search_products, create_order]
 
-        Use this tool when the user wants to confirm their order or checkout.
+    # Get system prompt
+    system_prompt = get_system_prompt(top_k)
 
-        Args:
-            name: User's full name (will be confirmed/edited by user)
-            email: User's email address (will be confirmed/edited by user)
-
-        Returns:
-            Confirmation message with order details
-        """
-
-        # Create order object
-        order = {
-            "order_id": f"ORD-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            "customer_name": name,
-            "customer_email": email,
-            "order_date": datetime.now().isoformat(),
-            "status": "confirmed",
-        }
-
-        return (
-            f"Order created successfully!\n"
-            f"Order ID: {order['order_id']}\n"
-            f"Customer: {name}\n"
-            f"Email: {email}\n"
-            f"Thank you for your order!"
-        )
-
-    # Create custom search tool using @tool decorator
-    @tool
-    def search_products(query: str) -> str:
-        """Search for products in the e-commerce catalog.
-
-        Use this tool to find products that match user queries.
-        The tool returns the most relevant products based on name,
-        category, brand, description, and price.
-
-        Args:
-            query: Natural language query about products
-                   (e.g., "wireless headphones", "running shoes")
-
-        Returns:
-            Formatted string with top product matches including name, price, and description
-        """
-        docs = retriever.invoke(query)
-
-        if not docs:
-            return "No products found matching your query."
-
-        results = []
-        for i, doc in enumerate(docs, 1):
-            metadata = doc.metadata
-            result = (
-                f"{i}. {metadata.get('name', 'Unknown Product')}\n"
-                f"   Price: ${metadata.get('price', 0):.2f}\n"
-                f"   Category: {metadata.get('category', 'N/A')}\n"
-                f"   Brand: {metadata.get('brand', 'N/A')}\n"
-                f"   Description: {metadata.get('description', 'N/A')}\n"
-            )
-            results.append(result)
-
-        return "\n".join(results)
-
-    # Create agent with system prompt
-    system_prompt = (
-        "You are a helpful e-commerce assistant that helps users find products and create orders. "
-        "When a user asks about products, use the search_products tool to find "
-        f"the top {top_k} most relevant matches. "
-        "When a user wants to confirm their order or checkout, use the create_order tool "
-        "with their name and email address. "
-        "Present the results clearly with product names, prices, and key features. "
-        "Be friendly, informative, and helpful in your responses."
-    )
-
-    # PII middleware to redact emails before sending to LLM
-    pii_middleware = PIIMiddleware(
-        "email",
-        strategy="redact",
-        apply_to_input=True,
-    )
-
-    # Human-in-the-loop middleware to get name/email directly from user
-    human_in_the_loop_middleware = HumanInTheLoopMiddleware(
-        interrupt_on={
-            "create_order": {
-                "allowed_decisions": ["approve", "edit", "reject"],
-                "description": (
-                    "Please review and confirm your order details. "
-                    "You can approve, edit (name/email), or reject the order."
-                ),
-            },
-        },
-        description_prefix="Order confirmation pending",
-    )
-
-    summarization_middleware = SummarizationMiddleware(
-        model=smol_llm,
-        max_tokens_before_summary=2000,
-        messages_to_keep=5,
-    )
+    # Get middlewares
+    middleware = get_all_middlewares(smol_llm)
 
     checkpointer = InMemorySaver()
 
     agent = create_agent(
         model=llm,
-        tools=[search_products, create_order],
+        tools=tools,
         system_prompt=system_prompt,
-        middleware=[
-            pii_middleware,
-            human_in_the_loop_middleware,
-            summarization_middleware,
-        ],
+        middleware=middleware,
         checkpointer=checkpointer,
     )
 
