@@ -1,0 +1,24 @@
+user_query_task:
+  description: >
+    Fetch data from the database and answer user query.
+
+    Here is the user query: {user_query}
+  expected_output: >
+    A clear and concise answer to the user query
+  agent: data_fetcher
+
+# reporting_task:
+#   description: >
+#     Review the context you got and expand each topic into a full section for a report.
+#     Make sure the report is detailed and contains any and all relevant information.
+#   expected_output: >
+#     A fully fledged report with the main topics, each with a full section of information.
+#     Formatted as markdown without '```'
+#   agent: reporting_analyst
+
+# data_plot_task:
+#   description: >
+#     Plot the research report data in a compiling graph
+#   expected_output: >
+#     A compiling graph of the research report data in a png file
+#   agent: data_plotter
