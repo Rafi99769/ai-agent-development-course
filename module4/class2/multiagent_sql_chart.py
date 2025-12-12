@@ -53,7 +53,6 @@ db = SQLDatabase.from_uri(f"sqlite:///{CHINOOK_FILENAME}")
 
 llm = init_llm()
 
-# Build toolkit and tools used by the SQL agent
 toolkit = SQLDatabaseToolkit(db=db, llm=llm)
 sql_tools = toolkit.get_tools()
 
@@ -66,7 +65,6 @@ sql_list_tables_tool = get_tool("sql_db_list_tables")
 sql_schema_tool = get_tool("sql_db_schema")
 sql_query_checker_tool = get_tool("sql_db_query_checker")
 sql_query_tool = get_tool("sql_db_query")
-
 
 repl = PythonREPL()
 
@@ -109,9 +107,7 @@ def sql_list_tables_node(state: MessagesState):
         "type": "tool_call",
     }
     tool_call_message = AIMessage(content="", tool_calls=[tool_call])
-    # invoke the actual tool
     tool_message = sql_list_tables_tool.invoke(tool_call)
-    # respond summarizing available tables
     response = AIMessage(f"Available tables: {tool_message.content}")
     return {"messages": [tool_call_message, tool_message, response]}
 
@@ -129,7 +125,6 @@ def sql_call_get_schema_node(state: MessagesState):
     return {"messages": [response]}
 
 
-# System prompt for query generation
 generate_query_system_prompt = f"""
 You are an agent designed to interact with a SQL database.
 Given the user's question, create a syntactically correct {db.dialect} query to run,
@@ -149,36 +144,42 @@ def sql_generate_query_node(state: MessagesState):
     return {"messages": [response]}
 
 
-check_query_system_prompt = f"""
-You are a SQL expert. Double check the {db.dialect} query for common mistakes:
-- quoting, casting, joins, NOT IN with NULLs, BETWEEN inclusivity, UNION vs UNION ALL, etc.
-If mistakes, rewrite query; otherwise reproduce original.
-You will produce a tool_call if you want to run the query; otherwise return the corrected query.
-"""
-
-
 def sql_check_query_node(state: MessagesState):
-    # The last message should contain a tool_call with query args
+    """
+    Use the built-in query checker tool to validate and clean the query.
+    """
     last = state["messages"][-1]
     # If there are no tool calls, just let the model proceed (no-op)
     if not getattr(last, "tool_calls", None):
-        # call LLM to possibly produce the same message back
-        llm_with_tools = llm.bind_tools([sql_query_tool], tool_choice="any")
-        system_message = {"role": "system", "content": check_query_system_prompt}
-        # craft a user message containing the query to check if possible
-        # attempt to extract query from last content if available
-        user_msg = {"role": "user", "content": getattr(last, "content", "")}
-        response = llm_with_tools.invoke([system_message, user_msg])
-        return {"messages": [response]}
-    # If there is a tool_call, create a user message with the query and run the checker LLM
+        return {"messages": []}
+
     tool_call = last.tool_calls[0]
-    user_message = {"role": "user", "content": tool_call["args"].get("query", "")}
-    llm_with_tools = llm.bind_tools([sql_query_tool], tool_choice="any")
-    system_message = {"role": "system", "content": check_query_system_prompt}
-    response = llm_with_tools.invoke([system_message, user_message])
-    # ensure the response keeps the tool_call id so the compiled graph can track it
-    response.id = last.id
-    return {"messages": [response]}
+    original_query = tool_call["args"].get("query", "")
+
+    # Invoke the checker tool directly
+    # It returns a string (the checked query)
+    checked_query = sql_query_checker_tool.invoke(original_query)
+
+    # Basic cleanup in case the tool returns markdown formatting
+    clean_query = checked_query.strip()
+    if clean_query.startswith("```"):
+        # remove first line (```sql) and last line (```)
+        lines = clean_query.split("\n")
+        if len(lines) >= 3:
+            clean_query = "\n".join(lines[1:-1])
+        else:
+            clean_query = clean_query.replace("```", "")
+
+    # Create a new tool call with the checked query
+    new_tool_call = {
+        "name": "sql_db_query",
+        "args": {"query": clean_query},
+        "id": tool_call["id"],
+        "type": "tool_call",
+    }
+    
+    # Return a new AIMessage that leads to the run node
+    return {"messages": [AIMessage(content="", tool_calls=[new_tool_call])]}
 
 
 # The run_query node will execute the query using the tool's invoke directly
