@@ -1,0 +1,10 @@
+[project]
+name = "adk-sample"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-adk>=1.20.0",
+    "fastmcp>=2.0.0",
+]
