@@ -8,10 +8,10 @@ You need to install the appropriate database drivers for Python.
 
 ```bash
 # For PostgreSQL
-pip install psycopg2-binary
+uv add psycopg2-binary
 
 # For MySQL
-pip install pymysql
+uv add pymysql
 ```
 
 ## Connection Strings
