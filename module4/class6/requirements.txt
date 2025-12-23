@@ -1,0 +1,11 @@
+python-dotenv
+langchain
+langchain-openai
+langgraph
+pydantic
+pandas
+tabulate
+langchain-qdrant
+langchain_text_splitters
+langchain-community
+pymupdf
