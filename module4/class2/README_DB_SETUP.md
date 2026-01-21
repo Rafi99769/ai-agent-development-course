@@ -7,6 +7,8 @@ This guide explains how to connect PostgreSQL and MySQL databases to the `multia
 You need to install the appropriate database drivers for Python.
 
 ```bash
+uv sync
+
 # For PostgreSQL
 uv add psycopg2-binary
 
